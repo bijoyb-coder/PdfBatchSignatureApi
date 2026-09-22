@@ -1,0 +1,18 @@
+## .NET
+bin/
+obj/
+*.user
+.vs/
+
+## Test results
+[Tt]est[Rr]esult*/
+*.trx
+
+## Runtime output / sample data folders (contain real or generated local files, not source)
+PdfBatchSignatureApi/Output/
+PdfBatchSignatureApi/PdfSource/
+PdfBatchSignatureApi/Signatures/
+
+## OS/editor
+.DS_Store
+Thumbs.db
