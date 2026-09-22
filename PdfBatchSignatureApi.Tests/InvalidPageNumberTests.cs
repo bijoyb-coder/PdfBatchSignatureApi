@@ -1,8 +1,7 @@
 using System.Net;
-using System.Net.Http.Json;
+using System.Web;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
-using PdfBatchSignatureApi.Models;
 using Xunit;
 
 namespace PdfBatchSignatureApi.Tests;
@@ -57,9 +56,12 @@ public class InvalidPageNumberTests : IClassFixture<WebApplicationFactory<Progra
         var pdfPath = TestFixtures.CreateSamplePdf(Path.Combine(_pdfRoot, "input.pdf"), pageCount: 1);
         var sigPath = TestFixtures.CreateSamplePng(Path.Combine(_signatureRoot, "sig.png"));
 
-        var request = new AddBatchSignatureRequest { PdfPath = pdfPath, SignatureImagePath = sigPath, BatchNumber = "B1" };
+        var query = HttpUtility.ParseQueryString(string.Empty);
+        query["pdfPath"] = pdfPath;
+        query["signatureImagePath"] = sigPath;
+        query["batchNumber"] = "B1";
 
-        var response = await _client.PostAsJsonAsync("/api/pdf/add-batch-signature", request);
+        var response = await _client.PostAsync($"/api/pdf/add-batch-signature?{query}", content: null);
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }

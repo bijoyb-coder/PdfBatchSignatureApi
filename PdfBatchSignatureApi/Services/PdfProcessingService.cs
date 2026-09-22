@@ -26,36 +26,33 @@ public class PdfProcessingService : IPdfProcessingService
         _logger = logger;
     }
 
-    public async Task<AddBatchSignatureResponse> AddBatchAndSignatureAsync(AddBatchSignatureRequest request, CancellationToken cancellationToken = default)
+    public async Task<AddBatchSignatureResponse> AddBatchAndSignatureAsync(string pdfPath, string signatureImagePath, string batchNumber, CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
-        var batchNumber = request.BatchNumber.Trim();
+        batchNumber = ValidateBatchNumber(batchNumber);
 
         _logger.LogInformation(
             "Processing request received. PdfPath={PdfPath} SignatureImagePath={SignatureImagePath} BatchNumber={BatchNumber}",
-            request.PdfPath, request.SignatureImagePath, batchNumber);
+            pdfPath, signatureImagePath, batchNumber);
 
-        var pdfPath = ValidateAndResolvePath(request.PdfPath, _options.AllowedPdfRoot, new[] { ".pdf" }, "PdfPath");
-        var imagePath = ValidateAndResolvePath(request.SignatureImagePath, _options.AllowedSignatureRoot, AllowedImageExtensions, "SignatureImagePath");
+        var resolvedPdfPath = ValidateAndResolvePath(pdfPath, _options.AllowedPdfRoot, new[] { ".pdf" }, "pdfPath");
+        var resolvedImagePath = ValidateAndResolvePath(signatureImagePath, _options.AllowedSignatureRoot, AllowedImageExtensions, "signatureImagePath");
 
-        if (!File.Exists(pdfPath))
+        if (!File.Exists(resolvedPdfPath))
         {
-            throw new PdfProcessingException(PdfProcessingErrorType.NotFound, $"PDF file was not found: {request.PdfPath}");
+            throw new PdfProcessingException(PdfProcessingErrorType.NotFound, $"PDF file was not found: {pdfPath}");
         }
 
-        if (!File.Exists(imagePath))
+        if (!File.Exists(resolvedImagePath))
         {
-            throw new PdfProcessingException(PdfProcessingErrorType.NotFound, $"Signature image file was not found: {request.SignatureImagePath}");
+            throw new PdfProcessingException(PdfProcessingErrorType.NotFound, $"Signature image file was not found: {signatureImagePath}");
         }
 
         Directory.CreateDirectory(_options.OutputFolder);
 
-        var outputPath = BuildOutputPath(pdfPath, batchNumber);
+        var outputPath = BuildOutputPath(resolvedPdfPath, batchNumber);
 
-        var batchSettings = MergeBatchNumberSettings(_options.BatchNumber, request.BatchNumberPosition);
-        var signatureSettings = MergeSignatureSettings(_options.Signature, request.SignaturePosition);
-
-        await Task.Run(() => ProcessPdf(pdfPath, imagePath, batchNumber, outputPath, batchSettings, signatureSettings), cancellationToken);
+        await Task.Run(() => ProcessPdf(resolvedPdfPath, resolvedImagePath, batchNumber, outputPath, _options.BatchNumber, _options.Signature), cancellationToken);
 
         stopwatch.Stop();
         _logger.LogInformation(
@@ -67,10 +64,26 @@ public class PdfProcessingService : IPdfProcessingService
             Success = true,
             Message = "PDF processed successfully.",
             BatchNumber = batchNumber,
-            InputPdf = pdfPath,
-            SignatureImage = imagePath,
+            InputPdf = resolvedPdfPath,
+            SignatureImage = resolvedImagePath,
             OutputPdf = outputPath
         };
+    }
+
+    private static string ValidateBatchNumber(string batchNumber)
+    {
+        if (string.IsNullOrWhiteSpace(batchNumber))
+        {
+            throw new PdfProcessingException(PdfProcessingErrorType.Validation, "batchNumber is required.");
+        }
+
+        var trimmed = batchNumber.Trim();
+        if (trimmed.Length > 100)
+        {
+            throw new PdfProcessingException(PdfProcessingErrorType.Validation, "batchNumber cannot exceed 100 characters.");
+        }
+
+        return trimmed;
     }
 
     private void ProcessPdf(string pdfPath, string imagePath, string batchNumber, string outputPath, BatchNumberSettings batchSettings, SignatureSettings signatureSettings)
@@ -92,8 +105,8 @@ public class PdfProcessingService : IPdfProcessingService
         {
             var pageCount = document.PageCount;
 
-            ValidatePageNumber(batchSettings.PageNumber, pageCount, "BatchNumberPosition.PageNumber");
-            ValidatePageNumber(signatureSettings.PageNumber, pageCount, "SignaturePosition.PageNumber");
+            ValidatePageNumber(batchSettings.PageNumber, pageCount, "PdfProcessing:BatchNumber:PageNumber");
+            ValidatePageNumber(signatureSettings.PageNumber, pageCount, "PdfProcessing:Signature:PageNumber");
 
             XImage signatureImage;
             try
@@ -122,44 +135,6 @@ public class PdfProcessingService : IPdfProcessingService
                 }
             }
         }
-    }
-
-    /// <summary>Combines the configured defaults with any non-null fields from the per-request override.</summary>
-    private static BatchNumberSettings MergeBatchNumberSettings(BatchNumberSettings defaults, BatchNumberPositionOverride? overrideValues)
-    {
-        if (overrideValues is null)
-        {
-            return defaults;
-        }
-
-        return new BatchNumberSettings
-        {
-            PageNumber = overrideValues.PageNumber ?? defaults.PageNumber,
-            X = overrideValues.X ?? defaults.X,
-            Y = overrideValues.Y ?? defaults.Y,
-            FontSize = overrideValues.FontSize ?? defaults.FontSize,
-            FontName = overrideValues.FontName ?? defaults.FontName,
-            Width = overrideValues.Width ?? defaults.Width,
-            Height = overrideValues.Height ?? defaults.Height
-        };
-    }
-
-    /// <summary>Combines the configured defaults with any non-null fields from the per-request override.</summary>
-    private static SignatureSettings MergeSignatureSettings(SignatureSettings defaults, SignaturePositionOverride? overrideValues)
-    {
-        if (overrideValues is null)
-        {
-            return defaults;
-        }
-
-        return new SignatureSettings
-        {
-            PageNumber = overrideValues.PageNumber ?? defaults.PageNumber,
-            X = overrideValues.X ?? defaults.X,
-            Y = overrideValues.Y ?? defaults.Y,
-            Width = overrideValues.Width ?? defaults.Width,
-            Height = overrideValues.Height ?? defaults.Height
-        };
     }
 
     private void DrawBatchNumber(PdfDocument document, string batchNumber, BatchNumberSettings settings)

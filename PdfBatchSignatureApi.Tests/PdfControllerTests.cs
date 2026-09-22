@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Web;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using PdfBatchSignatureApi.Models;
@@ -55,6 +56,19 @@ public class PdfControllerTests : IClassFixture<WebApplicationFactory<Program>>,
     private string NewPdfPath(string name = "input.pdf") => Path.Combine(_pdfRoot, name);
     private string NewSignaturePath(string name = "sig.png") => Path.Combine(_signatureRoot, name);
 
+    /// <summary>
+    /// Calls the endpoint the same way the described UI does: plain query-string values, no JSON body.
+    /// </summary>
+    private Task<HttpResponseMessage> CallEndpoint(string? pdfPath, string? signatureImagePath, string? batchNumber)
+    {
+        var query = HttpUtility.ParseQueryString(string.Empty);
+        if (pdfPath is not null) query["pdfPath"] = pdfPath;
+        if (signatureImagePath is not null) query["signatureImagePath"] = signatureImagePath;
+        if (batchNumber is not null) query["batchNumber"] = batchNumber;
+
+        return _client.PostAsync($"/api/pdf/add-batch-signature?{query}", content: null);
+    }
+
     [Fact]
     public async Task BareFileNames_AreResolvedAgainstConfiguredAllowedRoots()
     {
@@ -63,14 +77,7 @@ public class PdfControllerTests : IClassFixture<WebApplicationFactory<Program>>,
         TestFixtures.CreateSamplePdf(NewPdfPath("Quotation_10025.pdf"));
         TestFixtures.CreateSamplePng(NewSignaturePath("AuthorizedSignature.png"));
 
-        var request = new AddBatchSignatureRequest
-        {
-            PdfPath = "Quotation_10025.pdf",
-            SignatureImagePath = "AuthorizedSignature.png",
-            BatchNumber = "BATCH-2026-00125"
-        };
-
-        var response = await _client.PostAsJsonAsync("/api/pdf/add-batch-signature", request);
+        var response = await CallEndpoint("Quotation_10025.pdf", "AuthorizedSignature.png", "BATCH-2026-00125");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var result = await response.Content.ReadFromJsonAsync<AddBatchSignatureResponse>();
@@ -84,16 +91,10 @@ public class PdfControllerTests : IClassFixture<WebApplicationFactory<Program>>,
     [Fact]
     public async Task BareFileName_TraversalAttempt_ReturnsBadRequest()
     {
-        // "..\..\Windows\..." resolved against AllowedPdfRoot must still be rejected as escaping the root.
-        var sigPath = TestFixtures.CreateSamplePng(NewSignaturePath());
-        var request = new AddBatchSignatureRequest
-        {
-            PdfPath = @"..\..\outside.pdf",
-            SignatureImagePath = "sig.png",
-            BatchNumber = "B1"
-        };
+        // "..\..\outside.pdf" resolved against AllowedPdfRoot must still be rejected as escaping the root.
+        TestFixtures.CreateSamplePng(NewSignaturePath());
 
-        var response = await _client.PostAsJsonAsync("/api/pdf/add-batch-signature", request);
+        var response = await CallEndpoint(@"..\..\outside.pdf", "sig.png", "B1");
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -113,14 +114,7 @@ public class PdfControllerTests : IClassFixture<WebApplicationFactory<Program>>,
         var pdfPath = TestFixtures.CreateSamplePdf(NewPdfPath());
         var sigPath = TestFixtures.CreateSamplePng(NewSignaturePath());
 
-        var request = new AddBatchSignatureRequest
-        {
-            PdfPath = pdfPath,
-            SignatureImagePath = sigPath,
-            BatchNumber = "BATCH-2026-00125"
-        };
-
-        var response = await _client.PostAsJsonAsync("/api/pdf/add-batch-signature", request);
+        var response = await CallEndpoint(pdfPath, sigPath, "BATCH-2026-00125");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var result = await response.Content.ReadFromJsonAsync<AddBatchSignatureResponse>();
@@ -129,85 +123,16 @@ public class PdfControllerTests : IClassFixture<WebApplicationFactory<Program>>,
         Assert.True(File.Exists(result.OutputPdf));
 
         // Original must remain untouched.
-        var originalBytesAfter = await File.ReadAllBytesAsync(pdfPath);
         using var originalDoc = PdfReader.Open(pdfPath, PdfDocumentOpenMode.ReadOnly);
         Assert.Equal(1, originalDoc.PageCount);
-    }
-
-    [Fact]
-    public async Task PerRequestPositionOverride_UsesRequestCoordinatesInsteadOfConfigDefaults()
-    {
-        // Two-page PDF so the override's PageNumber (2) would be invalid under the config default (1),
-        // proving the request's values were actually used rather than silently falling back.
-        var pdfPath = TestFixtures.CreateSamplePdf(NewPdfPath(), pageCount: 2);
-        var sigPath = TestFixtures.CreateSamplePng(NewSignaturePath());
-
-        var request = new AddBatchSignatureRequest
-        {
-            PdfPath = pdfPath,
-            SignatureImagePath = sigPath,
-            BatchNumber = "BATCH-OVERRIDE-1",
-            BatchNumberPosition = new BatchNumberPositionOverride { PageNumber = 2, X = 50, Y = 60, FontSize = 9 },
-            SignaturePosition = new SignaturePositionOverride { PageNumber = 2, X = 100, Y = 200, Width = 80, Height = 30 }
-        };
-
-        var response = await _client.PostAsJsonAsync("/api/pdf/add-batch-signature", request);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var result = await response.Content.ReadFromJsonAsync<AddBatchSignatureResponse>();
-        Assert.NotNull(result);
-        Assert.True(result!.Success);
-        Assert.True(File.Exists(result.OutputPdf));
-    }
-
-    [Fact]
-    public async Task PerRequestPositionOverride_PartialFields_FallBackToConfigDefaultsForOmittedFields()
-    {
-        // Only X/Y overridden; PageNumber/FontSize/etc. should fall back to the config defaults (page 1)
-        // rather than the override object's C# default values (e.g. PageNumber 0, which would be invalid).
-        var pdfPath = TestFixtures.CreateSamplePdf(NewPdfPath(), pageCount: 1);
-        var sigPath = TestFixtures.CreateSamplePng(NewSignaturePath());
-
-        var request = new AddBatchSignatureRequest
-        {
-            PdfPath = pdfPath,
-            SignatureImagePath = sigPath,
-            BatchNumber = "BATCH-PARTIAL-1",
-            BatchNumberPosition = new BatchNumberPositionOverride { X = 75, Y = 85 },
-            SignaturePosition = new SignaturePositionOverride { X = 100, Y = 100 }
-        };
-
-        var response = await _client.PostAsJsonAsync("/api/pdf/add-batch-signature", request);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task PerRequestPositionOverride_PageNumberBeyondDocument_ReturnsUnprocessableEntity()
-    {
-        var pdfPath = TestFixtures.CreateSamplePdf(NewPdfPath(), pageCount: 1);
-        var sigPath = TestFixtures.CreateSamplePng(NewSignaturePath());
-
-        var request = new AddBatchSignatureRequest
-        {
-            PdfPath = pdfPath,
-            SignatureImagePath = sigPath,
-            BatchNumber = "BATCH-BADPAGE-1",
-            BatchNumberPosition = new BatchNumberPositionOverride { PageNumber = 9 }
-        };
-
-        var response = await _client.PostAsJsonAsync("/api/pdf/add-batch-signature", request);
-
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
 
     [Fact]
     public async Task MissingPdfPath_ReturnsBadRequest()
     {
         var sigPath = TestFixtures.CreateSamplePng(NewSignaturePath());
-        var request = new AddBatchSignatureRequest { PdfPath = "", SignatureImagePath = sigPath, BatchNumber = "B1" };
 
-        var response = await _client.PostAsJsonAsync("/api/pdf/add-batch-signature", request);
+        var response = await CallEndpoint(null, sigPath, "B1");
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -216,9 +141,8 @@ public class PdfControllerTests : IClassFixture<WebApplicationFactory<Program>>,
     public async Task MissingSignaturePath_ReturnsBadRequest()
     {
         var pdfPath = TestFixtures.CreateSamplePdf(NewPdfPath());
-        var request = new AddBatchSignatureRequest { PdfPath = pdfPath, SignatureImagePath = "", BatchNumber = "B1" };
 
-        var response = await _client.PostAsJsonAsync("/api/pdf/add-batch-signature", request);
+        var response = await CallEndpoint(pdfPath, null, "B1");
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -228,9 +152,8 @@ public class PdfControllerTests : IClassFixture<WebApplicationFactory<Program>>,
     {
         var pdfPath = TestFixtures.CreateSamplePdf(NewPdfPath());
         var sigPath = TestFixtures.CreateSamplePng(NewSignaturePath());
-        var request = new AddBatchSignatureRequest { PdfPath = pdfPath, SignatureImagePath = sigPath, BatchNumber = "" };
 
-        var response = await _client.PostAsJsonAsync("/api/pdf/add-batch-signature", request);
+        var response = await CallEndpoint(pdfPath, sigPath, null);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -239,14 +162,8 @@ public class PdfControllerTests : IClassFixture<WebApplicationFactory<Program>>,
     public async Task NonExistentPdf_ReturnsNotFound()
     {
         var sigPath = TestFixtures.CreateSamplePng(NewSignaturePath());
-        var request = new AddBatchSignatureRequest
-        {
-            PdfPath = NewPdfPath("does-not-exist.pdf"),
-            SignatureImagePath = sigPath,
-            BatchNumber = "B1"
-        };
 
-        var response = await _client.PostAsJsonAsync("/api/pdf/add-batch-signature", request);
+        var response = await CallEndpoint(NewPdfPath("does-not-exist.pdf"), sigPath, "B1");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -255,14 +172,8 @@ public class PdfControllerTests : IClassFixture<WebApplicationFactory<Program>>,
     public async Task NonExistentSignatureImage_ReturnsNotFound()
     {
         var pdfPath = TestFixtures.CreateSamplePdf(NewPdfPath());
-        var request = new AddBatchSignatureRequest
-        {
-            PdfPath = pdfPath,
-            SignatureImagePath = NewSignaturePath("missing.png"),
-            BatchNumber = "B1"
-        };
 
-        var response = await _client.PostAsJsonAsync("/api/pdf/add-batch-signature", request);
+        var response = await CallEndpoint(pdfPath, NewSignaturePath("missing.png"), "B1");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
@@ -272,9 +183,8 @@ public class PdfControllerTests : IClassFixture<WebApplicationFactory<Program>>,
     {
         var pdfPath = TestFixtures.CreateInvalidPdf(NewPdfPath("bad.pdf"));
         var sigPath = TestFixtures.CreateSamplePng(NewSignaturePath());
-        var request = new AddBatchSignatureRequest { PdfPath = pdfPath, SignatureImagePath = sigPath, BatchNumber = "B1" };
 
-        var response = await _client.PostAsJsonAsync("/api/pdf/add-batch-signature", request);
+        var response = await CallEndpoint(pdfPath, sigPath, "B1");
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -284,9 +194,8 @@ public class PdfControllerTests : IClassFixture<WebApplicationFactory<Program>>,
     {
         var pdfPath = TestFixtures.CreateSamplePdf(NewPdfPath());
         var sigPath = TestFixtures.CreateInvalidImage(NewSignaturePath("bad.png"));
-        var request = new AddBatchSignatureRequest { PdfPath = pdfPath, SignatureImagePath = sigPath, BatchNumber = "B1" };
 
-        var response = await _client.PostAsJsonAsync("/api/pdf/add-batch-signature", request);
+        var response = await CallEndpoint(pdfPath, sigPath, "B1");
 
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
     }
@@ -299,12 +208,9 @@ public class PdfControllerTests : IClassFixture<WebApplicationFactory<Program>>,
         var pdfPath = TestFixtures.CreateSamplePdf(Path.Combine(outsideDir, "outside.pdf"));
         var sigPath = TestFixtures.CreateSamplePng(NewSignaturePath());
 
-        var request = new AddBatchSignatureRequest { PdfPath = pdfPath, SignatureImagePath = sigPath, BatchNumber = "B1" };
-
-        var response = await _client.PostAsJsonAsync("/api/pdf/add-batch-signature", request);
+        var response = await CallEndpoint(pdfPath, sigPath, "B1");
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Directory.Delete(outsideDir, recursive: true);
     }
-
 }

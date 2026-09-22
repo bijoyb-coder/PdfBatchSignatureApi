@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using PdfBatchSignatureApi.Models;
 using PdfBatchSignatureApi.Services;
@@ -20,14 +21,24 @@ public class PdfController : ControllerBase
     }
 
     /// <summary>
-    /// Opens an existing PDF at <paramref name="request"/>.PdfPath, stamps the given batch number
-    /// and a signature image onto the configured page(s), and saves the result as a new PDF.
-    /// The original PDF file is never modified.
+    /// Opens an existing PDF, stamps the given batch number and a signature image onto the page(s)
+    /// configured in appsettings.json, and saves the result as a new PDF. The original PDF file is
+    /// never modified.
     /// </summary>
-    /// <param name="request">File paths (on the API host's file system) and the batch number to stamp.</param>
+    /// <param name="pdfPath">
+    /// File name of the existing source PDF (e.g. "Quotation_10025.pdf"), looked up in the server's
+    /// configured PdfProcessing:AllowedPdfRoot folder. A full path is also accepted as long as it
+    /// resolves inside that folder. Must have a .pdf extension.
+    /// </param>
+    /// <param name="signatureImagePath">
+    /// File name of the signature image (e.g. "AuthorizedSignature.png"), looked up in the server's
+    /// configured PdfProcessing:AllowedSignatureRoot folder. A full path is also accepted as long as
+    /// it resolves inside that folder. Must be .png, .jpg, or .jpeg.
+    /// </param>
+    /// <param name="batchNumber">Batch number to stamp onto the PDF. Trimmed; max 100 characters.</param>
     /// <param name="cancellationToken">Cancellation token for the request.</param>
     /// <response code="200">The PDF was processed successfully.</response>
-    /// <response code="400">The request was missing a required field or a field was invalid.</response>
+    /// <response code="400">A required field was missing or invalid.</response>
     /// <response code="404">The PDF or signature image file does not exist.</response>
     /// <response code="422">The PDF or image exists but could not be processed (corrupt, invalid page number, etc).</response>
     /// <response code="500">An unexpected server error occurred.</response>
@@ -37,7 +48,11 @@ public class PdfController : ControllerBase
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status422UnprocessableEntity)]
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
-    public async Task<IActionResult> AddBatchSignature([FromBody] AddBatchSignatureRequest request, CancellationToken cancellationToken)
+    public async Task<IActionResult> AddBatchSignature(
+        [FromQuery, Required(ErrorMessage = "pdfPath is required.")] string pdfPath,
+        [FromQuery, Required(ErrorMessage = "signatureImagePath is required.")] string signatureImagePath,
+        [FromQuery, Required(ErrorMessage = "batchNumber is required."), StringLength(100, ErrorMessage = "batchNumber cannot exceed 100 characters.")] string batchNumber,
+        CancellationToken cancellationToken)
     {
         if (!ModelState.IsValid)
         {
@@ -47,7 +62,7 @@ public class PdfController : ControllerBase
 
         try
         {
-            var result = await _pdfProcessingService.AddBatchAndSignatureAsync(request, cancellationToken);
+            var result = await _pdfProcessingService.AddBatchAndSignatureAsync(pdfPath, signatureImagePath, batchNumber, cancellationToken);
             return Ok(result);
         }
         catch (PdfProcessingException ex)

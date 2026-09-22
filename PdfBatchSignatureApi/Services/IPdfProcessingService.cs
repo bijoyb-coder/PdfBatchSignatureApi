@@ -9,9 +9,11 @@ namespace PdfBatchSignatureApi.Services;
 public interface IPdfProcessingService
 {
     /// <summary>
-    /// Validates the request, opens the source PDF, stamps the batch number and signature
-    /// onto the configured page(s), and writes the result to a new file in the output folder.
+    /// Validates the inputs, opens the source PDF, stamps the batch number and signature onto the
+    /// page(s) configured in appsettings.json, and writes the result to a new file in the output folder.
+    /// <paramref name="pdfPath"/> and <paramref name="signatureImagePath"/> may be a bare file name
+    /// (resolved under the configured allowed root folders) or a full path within them.
     /// </summary>
     /// <exception cref="PdfProcessingException">Thrown for any validation or processing failure.</exception>
-    Task<AddBatchSignatureResponse> AddBatchAndSignatureAsync(AddBatchSignatureRequest request, CancellationToken cancellationToken = default);
+    Task<AddBatchSignatureResponse> AddBatchAndSignatureAsync(string pdfPath, string signatureImagePath, string batchNumber, CancellationToken cancellationToken = default);
 }

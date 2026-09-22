@@ -96,50 +96,34 @@ http://localhost:5080/swagger
 
 `POST /api/pdf/add-batch-signature`
 
-### Normal usage: UI supplies file names, coordinates are fixed by config
-
-This is the primary intended usage: a front-end collects **just a file name** for the PDF, **just a
-file name** for the signature image, and the batch number as plain text — for example, two text boxes
-and one input field. The API resolves each file name against the server's configured
+This endpoint takes **plain query-string parameters — no JSON body.** This matches the intended calling
+pattern directly: a front-end has one text box for the PDF file name, one text box for the signature
+file name, and one input for the batch number, and the system calls this endpoint passing those three
+values as-is. The API resolves each file name against the server's configured
 `PdfProcessing:AllowedPdfRoot` / `AllowedSignatureRoot` folders, and always stamps using the fixed
 `PdfProcessing:BatchNumber` / `Signature` X/Y coordinates from `appsettings.json` — no positioning
-values need to come from the UI at all:
+values are ever sent by the caller.
 
-```json
-{
-  "pdfPath": "Quotation_10025.pdf",
-  "signatureImagePath": "AuthorizedSignature.png",
-  "batchNumber": "BATCH-2026-00125"
-}
+```
+POST /api/pdf/add-batch-signature?pdfPath=Quotation_10025.pdf&signatureImagePath=AuthorizedSignature.png&batchNumber=BATCH-2026-00125
+```
+
+Equivalent curl:
+
+```bash
+curl -X POST "http://localhost:5080/api/pdf/add-batch-signature?pdfPath=Quotation_10025.pdf&signatureImagePath=AuthorizedSignature.png&batchNumber=BATCH-2026-00125"
 ```
 
 Given `"PdfProcessing:AllowedPdfRoot": "D:\\RajendraGlass\\Documents\\Quotation"` and
 `"AllowedSignatureRoot": "D:\\RajendraGlass\\Signatures"`, this resolves to
 `D:\RajendraGlass\Documents\Quotation\Quotation_10025.pdf` and
 `D:\RajendraGlass\Signatures\AuthorizedSignature.png` respectively — the caller never needs to know or
-send the full path. A full path is still accepted too (see [Path Security](#13-security-considerations-for-file-paths)
-for how both are validated), but the UI described above only ever needs to send bare file names.
+send the full path. A full path is still accepted too (see [Security Considerations](#13-security-considerations-for-file-paths)
+for how both are validated), but the normal case only ever needs bare file names.
 
-Use Swagger's **Try it out** button on `POST /api/pdf/add-batch-signature` to submit this directly.
-
-### Advanced, optional: per-request position overrides
-
-The fixed `appsettings.json` coordinates cover the normal case above. If a specific call ever needs to
-deviate from them (e.g. testing a different template's layout), the optional `batchNumberPosition` /
-`signaturePosition` objects override the config defaults field-by-field — any field left out falls back
-to `appsettings.json`:
-
-```json
-{
-  "pdfPath": "Quotation_10025.pdf",
-  "signatureImagePath": "AuthorizedSignature.png",
-  "batchNumber": "BATCH-2026-00125",
-  "batchNumberPosition": { "x": 100, "y": 100 }
-}
-```
-
-Omit `batchNumberPosition` / `signaturePosition` entirely (the normal case) to always use the fixed
-config coordinates.
+In Swagger, click **Try it out** on `POST /api/pdf/add-batch-signature` and three plain text boxes
+appear under **Parameters** — `pdfPath`, `signatureImagePath`, `batchNumber` — fill each in directly
+and click **Execute**. No JSON to write.
 
 ## 9. Example Response
 
@@ -169,7 +153,7 @@ Failure (e.g. `404 Not Found`):
 | Status | Meaning |
 |---|---|
 | 200 | PDF processed successfully |
-| 400 | Missing/invalid `PdfPath`, `SignatureImagePath`, or `BatchNumber`; path outside allowed root; wrong extension |
+| 400 | Missing/invalid `pdfPath`, `signatureImagePath`, or `batchNumber`; path outside allowed root; wrong extension |
 | 404 | PDF or signature image file does not exist |
 | 422 | File exists but is corrupt/unreadable, image format unsupported, or `PageNumber` out of range |
 | 500 | Unexpected server error (full details logged server-side only, never returned to the client) |
@@ -234,16 +218,16 @@ names above, or extend `SystemFontResolver.FamilyMap` with your own font file ma
 
 ## 13. Security Considerations for File Paths
 
-This API accepts **file names or file system paths** in the request body — it does not use file
-uploads. Because of this:
+This API accepts **file names or file system paths** as plain query-string values — it does not use
+file uploads. Because of this:
 
-- **`PdfPath`/`SignatureImagePath` resolution**: a bare file name with no drive/root (e.g.
+- **`pdfPath`/`signatureImagePath` resolution**: a bare file name with no drive/root (e.g.
   `"Quotation_10025.pdf"` — what the UI described in [§8](#8-example-api-request) sends) is resolved
   directly under `PdfProcessing:AllowedPdfRoot` / `AllowedSignatureRoot`. A full/rooted path
   (`"D:\\...\\Quotation_10025.pdf"`) is accepted too, but is still required to resolve inside that same
   allowed root — a caller can never point outside it either way.
-- **`AllowedPdfRoot`** and **`AllowedSignatureRoot`** in `appsettings.json` restrict `PdfPath` and
-  `SignatureImagePath` to files located within those directory trees. Any resolved path (via
+- **`AllowedPdfRoot`** and **`AllowedSignatureRoot`** in `appsettings.json` restrict `pdfPath` and
+  `signatureImagePath` to files located within those directory trees. Any resolved path (via
   `Path.GetFullPath`, which also normalizes `..` traversal) that falls outside the configured root is
   rejected with `400 Bad Request` — this blocks path traversal attempts, whether spelled out as an
   absolute path (`..\..\Windows\System32\...`) or hidden inside what looks like a bare file name
@@ -282,8 +266,7 @@ uploads. Because of this:
 
 ```
 PdfBatchSignatureApi/
-├── Controllers/PdfController.cs           HTTP layer: validates ModelState, maps exceptions to status codes
-├── Models/AddBatchSignatureRequest.cs     Request DTO with DataAnnotations validation
+├── Controllers/PdfController.cs           HTTP layer: [FromQuery] parameters, validates ModelState, maps exceptions to status codes
 ├── Models/AddBatchSignatureResponse.cs    Response DTOs (success + error)
 ├── Services/IPdfProcessingService.cs      Service contract
 ├── Services/PdfProcessingService.cs       PDFsharp logic: validation, drawing, saving
@@ -315,23 +298,23 @@ scenarios: valid request end-to-end (and original-file-unchanged check), missing
 number, non-existent PDF/image, invalid/corrupt PDF, invalid/corrupt image, path outside the allowed
 root, out-of-range page number, output file creation, and the `/health` endpoint.
 
-If you want to test manually against your own files, just point `PdfPath` / `SignatureImagePath` in the
-Swagger request at any real `.pdf` and `.png`/`.jpg` on disk that fall under your configured
+If you want to test manually against your own files, just fill in the `pdfPath` / `signatureImagePath`
+text boxes in Swagger with any real `.pdf` and `.png`/`.jpg` file name that exists under your configured
 `AllowedPdfRoot` / `AllowedSignatureRoot`.
 
 ## Quick Reference: Where to Change What
 
-| Setting | Per-deployment default | Per-request override |
-|---|---|---|
-| Batch Number X/Y | `appsettings.json`: `PdfProcessing:BatchNumber:X` / `:Y` | request body: `batchNumberPosition.x` / `.y` |
-| Batch Number font size | `appsettings.json`: `PdfProcessing:BatchNumber:FontSize` | request body: `batchNumberPosition.fontSize` |
-| Batch Number font | `appsettings.json`: `PdfProcessing:BatchNumber:FontName` (also see `SystemFontResolver.FamilyMap` to add new fonts) | request body: `batchNumberPosition.fontName` |
-| Signature X/Y | `appsettings.json`: `PdfProcessing:Signature:X` / `:Y` | request body: `signaturePosition.x` / `.y` |
-| Signature width | `appsettings.json`: `PdfProcessing:Signature:Width` | request body: `signaturePosition.width` |
-| Signature height | `appsettings.json`: `PdfProcessing:Signature:Height` | request body: `signaturePosition.height` |
-| Target page number | `appsettings.json`: `PdfProcessing:BatchNumber:PageNumber` / `PdfProcessing:Signature:PageNumber` (independent) | request body: `batchNumberPosition.pageNumber` / `signaturePosition.pageNumber` |
-| Input/output allowed folders | `appsettings.json`: `PdfProcessing:AllowedPdfRoot`, `PdfProcessing:AllowedSignatureRoot`, `PdfProcessing:OutputFolder` | not overridable per request (security boundary — see [Security Considerations](#13-security-considerations-for-file-paths)) |
+Every coordinate is fixed in `appsettings.json` — the request only ever carries `pdfPath`,
+`signatureImagePath`, and `batchNumber` as plain query-string values; there is no way to override
+position from a request.
 
-The `appsettings.json` values are the fallback used whenever a request omits `batchNumberPosition` /
-`signaturePosition` (or omits individual fields within them) — see
-[Per-request position overrides](#per-request-position-overrides) above for the request shape.
+| Setting | Key |
+|---|---|
+| Batch Number X/Y | `appsettings.json`: `PdfProcessing:BatchNumber:X` / `:Y` |
+| Batch Number font size | `appsettings.json`: `PdfProcessing:BatchNumber:FontSize` |
+| Batch Number font | `appsettings.json`: `PdfProcessing:BatchNumber:FontName` (also see `SystemFontResolver.FamilyMap` to add new fonts) |
+| Signature X/Y | `appsettings.json`: `PdfProcessing:Signature:X` / `:Y` |
+| Signature width | `appsettings.json`: `PdfProcessing:Signature:Width` |
+| Signature height | `appsettings.json`: `PdfProcessing:Signature:Height` |
+| Target page number | `appsettings.json`: `PdfProcessing:BatchNumber:PageNumber` / `PdfProcessing:Signature:PageNumber` (independent) |
+| Input/output allowed folders | `appsettings.json`: `PdfProcessing:AllowedPdfRoot`, `PdfProcessing:AllowedSignatureRoot`, `PdfProcessing:OutputFolder` |
