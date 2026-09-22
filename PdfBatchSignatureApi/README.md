@@ -54,9 +54,9 @@ Test project additionally uses `Microsoft.AspNetCore.Mvc.Testing`, `xunit`, and 
     },
     "Signature": {
       "PageNumber": 1,
-      "X": 430,
+      "X": 150,
       "Y": 482,
-      "Width": 130,
+      "Width": 200,
       "Height": 42
     }
   },
