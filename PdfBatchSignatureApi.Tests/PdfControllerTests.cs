@@ -92,6 +92,73 @@ public class PdfControllerTests : IClassFixture<WebApplicationFactory<Program>>,
     }
 
     [Fact]
+    public async Task PerRequestPositionOverride_UsesRequestCoordinatesInsteadOfConfigDefaults()
+    {
+        // Two-page PDF so the override's PageNumber (2) would be invalid under the config default (1),
+        // proving the request's values were actually used rather than silently falling back.
+        var pdfPath = TestFixtures.CreateSamplePdf(NewPdfPath(), pageCount: 2);
+        var sigPath = TestFixtures.CreateSamplePng(NewSignaturePath());
+
+        var request = new AddBatchSignatureRequest
+        {
+            PdfPath = pdfPath,
+            SignatureImagePath = sigPath,
+            BatchNumber = "BATCH-OVERRIDE-1",
+            BatchNumberPosition = new BatchNumberPositionOverride { PageNumber = 2, X = 50, Y = 60, FontSize = 9 },
+            SignaturePosition = new SignaturePositionOverride { PageNumber = 2, X = 100, Y = 200, Width = 80, Height = 30 }
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/pdf/add-batch-signature", request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await response.Content.ReadFromJsonAsync<AddBatchSignatureResponse>();
+        Assert.NotNull(result);
+        Assert.True(result!.Success);
+        Assert.True(File.Exists(result.OutputPdf));
+    }
+
+    [Fact]
+    public async Task PerRequestPositionOverride_PartialFields_FallBackToConfigDefaultsForOmittedFields()
+    {
+        // Only X/Y overridden; PageNumber/FontSize/etc. should fall back to the config defaults (page 1)
+        // rather than the override object's C# default values (e.g. PageNumber 0, which would be invalid).
+        var pdfPath = TestFixtures.CreateSamplePdf(NewPdfPath(), pageCount: 1);
+        var sigPath = TestFixtures.CreateSamplePng(NewSignaturePath());
+
+        var request = new AddBatchSignatureRequest
+        {
+            PdfPath = pdfPath,
+            SignatureImagePath = sigPath,
+            BatchNumber = "BATCH-PARTIAL-1",
+            BatchNumberPosition = new BatchNumberPositionOverride { X = 75, Y = 85 },
+            SignaturePosition = new SignaturePositionOverride { X = 100, Y = 100 }
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/pdf/add-batch-signature", request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task PerRequestPositionOverride_PageNumberBeyondDocument_ReturnsUnprocessableEntity()
+    {
+        var pdfPath = TestFixtures.CreateSamplePdf(NewPdfPath(), pageCount: 1);
+        var sigPath = TestFixtures.CreateSamplePng(NewSignaturePath());
+
+        var request = new AddBatchSignatureRequest
+        {
+            PdfPath = pdfPath,
+            SignatureImagePath = sigPath,
+            BatchNumber = "BATCH-BADPAGE-1",
+            BatchNumberPosition = new BatchNumberPositionOverride { PageNumber = 9 }
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/pdf/add-batch-signature", request);
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+    }
+
+    [Fact]
     public async Task MissingPdfPath_ReturnsBadRequest()
     {
         var sigPath = TestFixtures.CreateSamplePng(NewSignaturePath());

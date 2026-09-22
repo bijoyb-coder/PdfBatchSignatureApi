@@ -52,7 +52,10 @@ public class PdfProcessingService : IPdfProcessingService
 
         var outputPath = BuildOutputPath(pdfPath, batchNumber);
 
-        await Task.Run(() => ProcessPdf(pdfPath, imagePath, batchNumber, outputPath), cancellationToken);
+        var batchSettings = MergeBatchNumberSettings(_options.BatchNumber, request.BatchNumberPosition);
+        var signatureSettings = MergeSignatureSettings(_options.Signature, request.SignaturePosition);
+
+        await Task.Run(() => ProcessPdf(pdfPath, imagePath, batchNumber, outputPath, batchSettings, signatureSettings), cancellationToken);
 
         stopwatch.Stop();
         _logger.LogInformation(
@@ -70,7 +73,7 @@ public class PdfProcessingService : IPdfProcessingService
         };
     }
 
-    private void ProcessPdf(string pdfPath, string imagePath, string batchNumber, string outputPath)
+    private void ProcessPdf(string pdfPath, string imagePath, string batchNumber, string outputPath, BatchNumberSettings batchSettings, SignatureSettings signatureSettings)
     {
         _logger.LogInformation("PDF processing started for {PdfPath}", pdfPath);
 
@@ -89,8 +92,8 @@ public class PdfProcessingService : IPdfProcessingService
         {
             var pageCount = document.PageCount;
 
-            ValidatePageNumber(_options.BatchNumber.PageNumber, pageCount, "BatchNumber");
-            ValidatePageNumber(_options.Signature.PageNumber, pageCount, "Signature");
+            ValidatePageNumber(batchSettings.PageNumber, pageCount, "BatchNumberPosition.PageNumber");
+            ValidatePageNumber(signatureSettings.PageNumber, pageCount, "SignaturePosition.PageNumber");
 
             XImage signatureImage;
             try
@@ -105,8 +108,8 @@ public class PdfProcessingService : IPdfProcessingService
 
             using (signatureImage)
             {
-                DrawBatchNumber(document, batchNumber);
-                DrawSignature(document, signatureImage);
+                DrawBatchNumber(document, batchNumber, batchSettings);
+                DrawSignature(document, signatureImage, signatureSettings);
 
                 try
                 {
@@ -121,9 +124,46 @@ public class PdfProcessingService : IPdfProcessingService
         }
     }
 
-    private void DrawBatchNumber(PdfDocument document, string batchNumber)
+    /// <summary>Combines the configured defaults with any non-null fields from the per-request override.</summary>
+    private static BatchNumberSettings MergeBatchNumberSettings(BatchNumberSettings defaults, BatchNumberPositionOverride? overrideValues)
     {
-        var settings = _options.BatchNumber;
+        if (overrideValues is null)
+        {
+            return defaults;
+        }
+
+        return new BatchNumberSettings
+        {
+            PageNumber = overrideValues.PageNumber ?? defaults.PageNumber,
+            X = overrideValues.X ?? defaults.X,
+            Y = overrideValues.Y ?? defaults.Y,
+            FontSize = overrideValues.FontSize ?? defaults.FontSize,
+            FontName = overrideValues.FontName ?? defaults.FontName,
+            Width = overrideValues.Width ?? defaults.Width,
+            Height = overrideValues.Height ?? defaults.Height
+        };
+    }
+
+    /// <summary>Combines the configured defaults with any non-null fields from the per-request override.</summary>
+    private static SignatureSettings MergeSignatureSettings(SignatureSettings defaults, SignaturePositionOverride? overrideValues)
+    {
+        if (overrideValues is null)
+        {
+            return defaults;
+        }
+
+        return new SignatureSettings
+        {
+            PageNumber = overrideValues.PageNumber ?? defaults.PageNumber,
+            X = overrideValues.X ?? defaults.X,
+            Y = overrideValues.Y ?? defaults.Y,
+            Width = overrideValues.Width ?? defaults.Width,
+            Height = overrideValues.Height ?? defaults.Height
+        };
+    }
+
+    private void DrawBatchNumber(PdfDocument document, string batchNumber, BatchNumberSettings settings)
+    {
         var page = document.Pages[settings.PageNumber - 1];
 
         using var gfx = XGraphics.FromPdfPage(page);
@@ -142,9 +182,8 @@ public class PdfProcessingService : IPdfProcessingService
         }
     }
 
-    private void DrawSignature(PdfDocument document, XImage signatureImage)
+    private void DrawSignature(PdfDocument document, XImage signatureImage, SignatureSettings settings)
     {
-        var settings = _options.Signature;
         var page = document.Pages[settings.PageNumber - 1];
 
         using var gfx = XGraphics.FromPdfPage(page);

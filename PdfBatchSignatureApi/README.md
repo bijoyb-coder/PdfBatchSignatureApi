@@ -96,6 +96,8 @@ http://localhost:5080/swagger
 
 `POST /api/pdf/add-batch-signature`
 
+Minimal request — uses the `BatchNumber`/`Signature` defaults from `appsettings.json`:
+
 ```json
 {
   "pdfPath": "D:\\RajendraGlass\\Documents\\Quotation\\Quotation_10025.pdf",
@@ -105,6 +107,43 @@ http://localhost:5080/swagger
 ```
 
 Use Swagger's **Try it out** button on `POST /api/pdf/add-batch-signature` to submit this directly.
+
+### Per-request position overrides
+
+Different PDF templates place the batch number and signature in different spots, so both are
+overridable **per request** via the optional `batchNumberPosition` / `signaturePosition` objects.
+Any field you omit falls back to the `appsettings.json` default for that field — you don't have to
+repeat values that don't change:
+
+```json
+{
+  "pdfPath": "D:\\RajendraGlass\\Documents\\Quotation\\Quotation_10025.pdf",
+  "signatureImagePath": "D:\\RajendraGlass\\Signatures\\AuthorizedSignature.png",
+  "batchNumber": "BATCH-2026-00125",
+  "batchNumberPosition": {
+    "pageNumber": 1,
+    "x": 605,
+    "y": 259,
+    "fontSize": 10,
+    "fontName": "Arial",
+    "width": 150,
+    "height": 14
+  },
+  "signaturePosition": {
+    "pageNumber": 1,
+    "x": 528,
+    "y": 484,
+    "width": 46,
+    "height": 38
+  }
+}
+```
+
+Omit `batchNumberPosition` / `signaturePosition` entirely to use the config defaults unchanged, or
+include only the fields you need to change (e.g. just `"batchNumberPosition": { "x": 100, "y": 100 }`)
+— the rest are filled in from `appsettings.json`. This means a single deployment can correctly stamp
+several different PDF templates, each with its own caller-supplied coordinates, without needing a
+config change or restart per template.
 
 ## 9. Example Response
 
@@ -279,13 +318,17 @@ Swagger request at any real `.pdf` and `.png`/`.jpg` on disk that fall under you
 
 ## Quick Reference: Where to Change What
 
-| Setting | File | Key |
+| Setting | Per-deployment default | Per-request override |
 |---|---|---|
-| Batch Number X/Y | `appsettings.json` | `PdfProcessing:BatchNumber:X` / `:Y` |
-| Batch Number font size | `appsettings.json` | `PdfProcessing:BatchNumber:FontSize` |
-| Batch Number font | `appsettings.json` | `PdfProcessing:BatchNumber:FontName` (also see `SystemFontResolver.FamilyMap` to add new fonts) |
-| Signature X/Y | `appsettings.json` | `PdfProcessing:Signature:X` / `:Y` |
-| Signature width | `appsettings.json` | `PdfProcessing:Signature:Width` |
-| Signature height | `appsettings.json` | `PdfProcessing:Signature:Height` |
-| Target page number | `appsettings.json` | `PdfProcessing:BatchNumber:PageNumber` and `PdfProcessing:Signature:PageNumber` (independent) |
-| Input/output allowed folders | `appsettings.json` | `PdfProcessing:AllowedPdfRoot`, `PdfProcessing:AllowedSignatureRoot`, `PdfProcessing:OutputFolder` |
+| Batch Number X/Y | `appsettings.json`: `PdfProcessing:BatchNumber:X` / `:Y` | request body: `batchNumberPosition.x` / `.y` |
+| Batch Number font size | `appsettings.json`: `PdfProcessing:BatchNumber:FontSize` | request body: `batchNumberPosition.fontSize` |
+| Batch Number font | `appsettings.json`: `PdfProcessing:BatchNumber:FontName` (also see `SystemFontResolver.FamilyMap` to add new fonts) | request body: `batchNumberPosition.fontName` |
+| Signature X/Y | `appsettings.json`: `PdfProcessing:Signature:X` / `:Y` | request body: `signaturePosition.x` / `.y` |
+| Signature width | `appsettings.json`: `PdfProcessing:Signature:Width` | request body: `signaturePosition.width` |
+| Signature height | `appsettings.json`: `PdfProcessing:Signature:Height` | request body: `signaturePosition.height` |
+| Target page number | `appsettings.json`: `PdfProcessing:BatchNumber:PageNumber` / `PdfProcessing:Signature:PageNumber` (independent) | request body: `batchNumberPosition.pageNumber` / `signaturePosition.pageNumber` |
+| Input/output allowed folders | `appsettings.json`: `PdfProcessing:AllowedPdfRoot`, `PdfProcessing:AllowedSignatureRoot`, `PdfProcessing:OutputFolder` | not overridable per request (security boundary — see [Security Considerations](#13-security-considerations-for-file-paths)) |
+
+The `appsettings.json` values are the fallback used whenever a request omits `batchNumberPosition` /
+`signaturePosition` (or omits individual fields within them) — see
+[Per-request position overrides](#per-request-position-overrides) above for the request shape.
