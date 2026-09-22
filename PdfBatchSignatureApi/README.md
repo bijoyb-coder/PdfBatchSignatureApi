@@ -96,54 +96,50 @@ http://localhost:5080/swagger
 
 `POST /api/pdf/add-batch-signature`
 
-Minimal request — uses the `BatchNumber`/`Signature` defaults from `appsettings.json`:
+### Normal usage: UI supplies file names, coordinates are fixed by config
+
+This is the primary intended usage: a front-end collects **just a file name** for the PDF, **just a
+file name** for the signature image, and the batch number as plain text — for example, two text boxes
+and one input field. The API resolves each file name against the server's configured
+`PdfProcessing:AllowedPdfRoot` / `AllowedSignatureRoot` folders, and always stamps using the fixed
+`PdfProcessing:BatchNumber` / `Signature` X/Y coordinates from `appsettings.json` — no positioning
+values need to come from the UI at all:
 
 ```json
 {
-  "pdfPath": "D:\\RajendraGlass\\Documents\\Quotation\\Quotation_10025.pdf",
-  "signatureImagePath": "D:\\RajendraGlass\\Signatures\\AuthorizedSignature.png",
+  "pdfPath": "Quotation_10025.pdf",
+  "signatureImagePath": "AuthorizedSignature.png",
   "batchNumber": "BATCH-2026-00125"
 }
 ```
 
+Given `"PdfProcessing:AllowedPdfRoot": "D:\\RajendraGlass\\Documents\\Quotation"` and
+`"AllowedSignatureRoot": "D:\\RajendraGlass\\Signatures"`, this resolves to
+`D:\RajendraGlass\Documents\Quotation\Quotation_10025.pdf` and
+`D:\RajendraGlass\Signatures\AuthorizedSignature.png` respectively — the caller never needs to know or
+send the full path. A full path is still accepted too (see [Path Security](#13-security-considerations-for-file-paths)
+for how both are validated), but the UI described above only ever needs to send bare file names.
+
 Use Swagger's **Try it out** button on `POST /api/pdf/add-batch-signature` to submit this directly.
 
-### Per-request position overrides
+### Advanced, optional: per-request position overrides
 
-Different PDF templates place the batch number and signature in different spots, so both are
-overridable **per request** via the optional `batchNumberPosition` / `signaturePosition` objects.
-Any field you omit falls back to the `appsettings.json` default for that field — you don't have to
-repeat values that don't change:
+The fixed `appsettings.json` coordinates cover the normal case above. If a specific call ever needs to
+deviate from them (e.g. testing a different template's layout), the optional `batchNumberPosition` /
+`signaturePosition` objects override the config defaults field-by-field — any field left out falls back
+to `appsettings.json`:
 
 ```json
 {
-  "pdfPath": "D:\\RajendraGlass\\Documents\\Quotation\\Quotation_10025.pdf",
-  "signatureImagePath": "D:\\RajendraGlass\\Signatures\\AuthorizedSignature.png",
+  "pdfPath": "Quotation_10025.pdf",
+  "signatureImagePath": "AuthorizedSignature.png",
   "batchNumber": "BATCH-2026-00125",
-  "batchNumberPosition": {
-    "pageNumber": 1,
-    "x": 605,
-    "y": 259,
-    "fontSize": 10,
-    "fontName": "Arial",
-    "width": 150,
-    "height": 14
-  },
-  "signaturePosition": {
-    "pageNumber": 1,
-    "x": 528,
-    "y": 484,
-    "width": 46,
-    "height": 38
-  }
+  "batchNumberPosition": { "x": 100, "y": 100 }
 }
 ```
 
-Omit `batchNumberPosition` / `signaturePosition` entirely to use the config defaults unchanged, or
-include only the fields you need to change (e.g. just `"batchNumberPosition": { "x": 100, "y": 100 }`)
-— the rest are filled in from `appsettings.json`. This means a single deployment can correctly stamp
-several different PDF templates, each with its own caller-supplied coordinates, without needing a
-config change or restart per template.
+Omit `batchNumberPosition` / `signaturePosition` entirely (the normal case) to always use the fixed
+config coordinates.
 
 ## 9. Example Response
 
@@ -238,13 +234,20 @@ names above, or extend `SystemFontResolver.FamilyMap` with your own font file ma
 
 ## 13. Security Considerations for File Paths
 
-This API accepts **arbitrary file system paths** in the request body — it does not use file uploads.
-Because of this:
+This API accepts **file names or file system paths** in the request body — it does not use file
+uploads. Because of this:
 
+- **`PdfPath`/`SignatureImagePath` resolution**: a bare file name with no drive/root (e.g.
+  `"Quotation_10025.pdf"` — what the UI described in [§8](#8-example-api-request) sends) is resolved
+  directly under `PdfProcessing:AllowedPdfRoot` / `AllowedSignatureRoot`. A full/rooted path
+  (`"D:\\...\\Quotation_10025.pdf"`) is accepted too, but is still required to resolve inside that same
+  allowed root — a caller can never point outside it either way.
 - **`AllowedPdfRoot`** and **`AllowedSignatureRoot`** in `appsettings.json` restrict `PdfPath` and
-  `SignatureImagePath` to files located within those directory trees. Any path that resolves (via
-  `Path.GetFullPath`, which also normalizes `..` traversal) outside the configured root is rejected
-  with `400 Bad Request` — this blocks path traversal attempts (e.g. `..\..\Windows\System32\...`).
+  `SignatureImagePath` to files located within those directory trees. Any resolved path (via
+  `Path.GetFullPath`, which also normalizes `..` traversal) that falls outside the configured root is
+  rejected with `400 Bad Request` — this blocks path traversal attempts, whether spelled out as an
+  absolute path (`..\..\Windows\System32\...`) or hidden inside what looks like a bare file name
+  (`..\..\Windows\System32\config.pdf`).
 - Extensions are strictly checked (`.pdf` for the PDF; `.png`/`.jpg`/`.jpeg` for the signature) before
   any file I/O occurs.
 - If `AllowedPdfRoot` / `AllowedSignatureRoot` are left blank, path restriction is disabled — **only do

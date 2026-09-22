@@ -56,6 +56,49 @@ public class PdfControllerTests : IClassFixture<WebApplicationFactory<Program>>,
     private string NewSignaturePath(string name = "sig.png") => Path.Combine(_signatureRoot, name);
 
     [Fact]
+    public async Task BareFileNames_AreResolvedAgainstConfiguredAllowedRoots()
+    {
+        // This is the UI's actual calling pattern: just a file name, not a full path — the API must
+        // combine it with PdfProcessing:AllowedPdfRoot / AllowedSignatureRoot itself.
+        TestFixtures.CreateSamplePdf(NewPdfPath("Quotation_10025.pdf"));
+        TestFixtures.CreateSamplePng(NewSignaturePath("AuthorizedSignature.png"));
+
+        var request = new AddBatchSignatureRequest
+        {
+            PdfPath = "Quotation_10025.pdf",
+            SignatureImagePath = "AuthorizedSignature.png",
+            BatchNumber = "BATCH-2026-00125"
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/pdf/add-batch-signature", request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await response.Content.ReadFromJsonAsync<AddBatchSignatureResponse>();
+        Assert.NotNull(result);
+        Assert.True(result!.Success);
+        Assert.Equal(Path.Combine(_pdfRoot, "Quotation_10025.pdf"), result.InputPdf);
+        Assert.Equal(Path.Combine(_signatureRoot, "AuthorizedSignature.png"), result.SignatureImage);
+        Assert.True(File.Exists(result.OutputPdf));
+    }
+
+    [Fact]
+    public async Task BareFileName_TraversalAttempt_ReturnsBadRequest()
+    {
+        // "..\..\Windows\..." resolved against AllowedPdfRoot must still be rejected as escaping the root.
+        var sigPath = TestFixtures.CreateSamplePng(NewSignaturePath());
+        var request = new AddBatchSignatureRequest
+        {
+            PdfPath = @"..\..\outside.pdf",
+            SignatureImagePath = "sig.png",
+            BatchNumber = "B1"
+        };
+
+        var response = await _client.PostAsJsonAsync("/api/pdf/add-batch-signature", request);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
     public async Task HealthCheck_ReturnsHealthy()
     {
         var response = await _client.GetAsync("/health");

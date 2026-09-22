@@ -4,16 +4,29 @@ namespace PdfBatchSignatureApi.Models;
 
 /// <summary>
 /// Request payload for adding a batch number and signature image to an existing PDF.
-/// All paths must be absolute file system paths reachable by the API host, and must
-/// fall within the configured allowed root folders (see AllowedPdfRoot / AllowedSignatureRoot).
+/// <para>
+/// <see cref="PdfPath"/> and <see cref="SignatureImagePath"/> are normally just a **file name**
+/// (e.g. <c>"Quotation_10025.pdf"</c>) — exactly what a UI text box would collect — which is resolved
+/// automatically under the server's configured <c>PdfProcessing:AllowedPdfRoot</c> /
+/// <c>AllowedSignatureRoot</c> folders. A full path is also accepted, but must still resolve inside
+/// those same allowed folders.
+/// </para>
 /// </summary>
 public class AddBatchSignatureRequest
 {
-    /// <summary>Absolute path to the existing source PDF file. Must have a .pdf extension.</summary>
+    /// <summary>
+    /// File name of the existing source PDF (e.g. <c>"Quotation_10025.pdf"</c>), looked up in the
+    /// server's configured <c>PdfProcessing:AllowedPdfRoot</c> folder. A full path is also accepted
+    /// as long as it resolves inside that folder. Must have a .pdf extension.
+    /// </summary>
     [Required(ErrorMessage = "PdfPath is required.")]
     public string PdfPath { get; set; } = string.Empty;
 
-    /// <summary>Absolute path to the signature image file. Must be .png, .jpg, or .jpeg.</summary>
+    /// <summary>
+    /// File name of the signature image (e.g. <c>"AuthorizedSignature.png"</c>), looked up in the
+    /// server's configured <c>PdfProcessing:AllowedSignatureRoot</c> folder. A full path is also
+    /// accepted as long as it resolves inside that folder. Must be .png, .jpg, or .jpeg.
+    /// </summary>
     [Required(ErrorMessage = "SignatureImagePath is required.")]
     public string SignatureImagePath { get; set; } = string.Empty;
 
@@ -23,16 +36,16 @@ public class AddBatchSignatureRequest
     public string BatchNumber { get; set; } = string.Empty;
 
     /// <summary>
-    /// Optional per-request placement for the batch number text. Any field left null falls back to
-    /// the corresponding <c>PdfProcessing:BatchNumber</c> value in appsettings.json. Use this when
-    /// different PDF templates need the batch number in different spots on the same call.
+    /// Optional, advanced: per-request placement for the batch number text. Leave this out entirely
+    /// for normal use — the fixed <c>PdfProcessing:BatchNumber</c> coordinates from appsettings.json
+    /// are used. Only set this if a specific call needs to deviate from that fixed position.
     /// </summary>
     public BatchNumberPositionOverride? BatchNumberPosition { get; set; }
 
     /// <summary>
-    /// Optional per-request placement for the signature image. Any field left null falls back to
-    /// the corresponding <c>PdfProcessing:Signature</c> value in appsettings.json. Use this when
-    /// different PDF templates need the signature in a different spot/size on the same call.
+    /// Optional, advanced: per-request placement for the signature image. Leave this out entirely
+    /// for normal use — the fixed <c>PdfProcessing:Signature</c> coordinates from appsettings.json
+    /// are used. Only set this if a specific call needs to deviate from that fixed position.
     /// </summary>
     public SignaturePositionOverride? SignaturePosition { get; set; }
 }

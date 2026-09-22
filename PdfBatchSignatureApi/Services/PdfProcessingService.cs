@@ -202,8 +202,12 @@ public class PdfProcessingService : IPdfProcessingService
     }
 
     /// <summary>
-    /// Resolves a user-supplied path to a full path and verifies it lies within the configured
-    /// allowed root directory, preventing path traversal outside trusted folders.
+    /// Resolves a user-supplied file name or path to a full path and verifies it lies within the
+    /// configured allowed root directory, preventing path traversal outside trusted folders.
+    /// If <paramref name="suppliedPath"/> is just a file name (no drive/root, e.g. "Quotation_10025.pdf",
+    /// as a UI would send after the user picks a file from a dropdown/input box) it is resolved directly
+    /// under <paramref name="allowedRoot"/>. A full/rooted path is accepted as-is but must still resolve
+    /// inside <paramref name="allowedRoot"/>.
     /// </summary>
     private static string ValidateAndResolvePath(string suppliedPath, string allowedRoot, string[] allowedExtensions, string fieldName)
     {
@@ -223,11 +227,15 @@ public class PdfProcessingService : IPdfProcessingService
         string fullPath;
         try
         {
-            fullPath = Path.GetFullPath(suppliedPath);
+            // A bare file name (no drive/rooted path) is treated as relative to the allowed root,
+            // e.g. "Quotation_10025.pdf" -> "{AllowedPdfRoot}\Quotation_10025.pdf".
+            fullPath = !Path.IsPathRooted(suppliedPath) && !string.IsNullOrWhiteSpace(allowedRoot)
+                ? Path.GetFullPath(Path.Combine(allowedRoot, suppliedPath))
+                : Path.GetFullPath(suppliedPath);
         }
         catch (Exception ex)
         {
-            throw new PdfProcessingException(PdfProcessingErrorType.Validation, $"{fieldName} is not a valid file system path.", ex);
+            throw new PdfProcessingException(PdfProcessingErrorType.Validation, $"{fieldName} is not a valid file name or path.", ex);
         }
 
         if (string.IsNullOrWhiteSpace(allowedRoot))
