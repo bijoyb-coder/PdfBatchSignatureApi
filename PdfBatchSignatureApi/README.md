@@ -40,22 +40,24 @@ Test project additionally uses `Microsoft.AspNetCore.Mvc.Testing`, `xunit`, and 
 ```json
 {
   "PdfProcessing": {
-    "OutputFolder": "D:\\RajendraGlass\\Documents\\Processed",
-    "AllowedPdfRoot": "D:\\RajendraGlass\\Documents",
-    "AllowedSignatureRoot": "D:\\RajendraGlass\\Signatures",
+    "OutputFolder": "D:\\OCR_Edit\\PdfBatchSignatureApi\\Output",
+    "AllowedPdfRoot": "D:\\OCR_Edit\\PdfBatchSignatureApi\\PdfSource",
+    "AllowedSignatureRoot": "D:\\OCR_Edit\\PdfBatchSignatureApi\\Signatures",
     "BatchNumber": {
       "PageNumber": 1,
-      "X": 450,
-      "Y": 720,
-      "FontSize": 12,
-      "FontName": "Arial"
+      "X": 605,
+      "Y": 259,
+      "FontSize": 10,
+      "FontName": "Arial",
+      "Width": 150,
+      "Height": 14
     },
     "Signature": {
       "PageNumber": 1,
-      "X": 450,
-      "Y": 650,
-      "Width": 120,
-      "Height": 50
+      "X": 528,
+      "Y": 484,
+      "Width": 46,
+      "Height": 38
     }
   },
   "Cors": {
@@ -66,6 +68,14 @@ Test project additionally uses `Microsoft.AspNetCore.Mvc.Testing`, `xunit`, and 
 
 All values are bound to strongly typed classes in [`Configuration/PdfProcessingOptions.cs`](Configuration/PdfProcessingOptions.cs)
 via `IOptions<PdfProcessingOptions>` — nothing is hard-coded in `PdfProcessingService`.
+
+> **Note on the defaults above:** these were measured directly against the sample IFB Industries test
+> certificate template (792×612pt landscape) used during development — `BatchNumber` targets the blank
+> cell beside "TEST RESULTS", and `Signature` targets the narrow clear strip to the *left* of that
+> template's pre-existing company stamp (the signature box was kept deliberately small/left-aligned so
+> it never overlaps that stamp). **If your real PDFs use a different layout, or don't already contain a
+> stamp in that spot, re-measure and widen `Signature.Width`/`Height` as needed** — see
+> [Coordinate System Explanation](#12-coordinate-system-explanation).
 
 ## 6. Starting the API
 
