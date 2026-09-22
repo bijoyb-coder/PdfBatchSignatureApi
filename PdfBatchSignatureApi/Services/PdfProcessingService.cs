@@ -162,7 +162,26 @@ public class PdfProcessingService : IPdfProcessingService
         var page = document.Pages[settings.PageNumber - 1];
 
         using var gfx = XGraphics.FromPdfPage(page);
-        var rect = new XRect(settings.X, settings.Y, settings.Width, settings.Height);
+
+        // Preserve the image's own aspect ratio instead of stretching it to exactly fill
+        // Width x Height (which would distort it) - Width/Height are treated as a maximum
+        // bounding box, and the image is scaled down/up uniformly to fit inside it.
+        var naturalRatio = signatureImage.PixelWidth / (double)signatureImage.PixelHeight;
+        var boxRatio = settings.Width / settings.Height;
+
+        double drawWidth, drawHeight;
+        if (naturalRatio > boxRatio)
+        {
+            drawWidth = settings.Width;
+            drawHeight = settings.Width / naturalRatio;
+        }
+        else
+        {
+            drawHeight = settings.Height;
+            drawWidth = settings.Height * naturalRatio;
+        }
+
+        var rect = new XRect(settings.X, settings.Y, drawWidth, drawHeight);
         gfx.DrawImage(signatureImage, rect);
     }
 

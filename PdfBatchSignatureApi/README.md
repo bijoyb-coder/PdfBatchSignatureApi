@@ -54,10 +54,10 @@ Test project additionally uses `Microsoft.AspNetCore.Mvc.Testing`, `xunit`, and 
     },
     "Signature": {
       "PageNumber": 1,
-      "X": 528,
-      "Y": 484,
-      "Width": 46,
-      "Height": 38
+      "X": 430,
+      "Y": 482,
+      "Width": 130,
+      "Height": 42
     }
   },
   "Cors": {
@@ -71,11 +71,11 @@ via `IOptions<PdfProcessingOptions>` — nothing is hard-coded in `PdfProcessing
 
 > **Note on the defaults above:** these were measured directly against the sample IFB Industries test
 > certificate template (792×612pt landscape) used during development — `BatchNumber` targets the blank
-> cell beside "TEST RESULTS", and `Signature` targets the narrow clear strip to the *left* of that
-> template's pre-existing company stamp (the signature box was kept deliberately small/left-aligned so
-> it never overlaps that stamp). **If your real PDFs use a different layout, or don't already contain a
-> stamp in that spot, re-measure and widen `Signature.Width`/`Height` as needed** — see
-> [Coordinate System Explanation](#12-coordinate-system-explanation).
+> cell beside "TEST RESULTS", and `Signature` targets the clear blank space to the *left* of that
+> template's pre-existing company stamp, with a comfortable gap so the new signature and the existing
+> stamp both stay fully legible and never touch. **If your real PDFs use a different layout, or don't
+> already contain a stamp in that spot, re-measure and adjust `Signature.X`/`Width`/`Height` as
+> needed** — see [Coordinate System Explanation](#12-coordinate-system-explanation).
 
 ## 6. Starting the API
 
@@ -178,7 +178,11 @@ Edit `PdfProcessing:Signature` in `appsettings.json`:
 
 - `PageNumber` — 1-based page the signature image is drawn on.
 - `X`, `Y` — top-left position in points.
-- `Width`, `Height` — size in points the image is scaled to.
+- `Width`, `Height` — a **maximum bounding box** in points, not a forced size. The signature image's
+  own aspect ratio is always preserved — it is scaled uniformly to fit inside `Width` x `Height` without
+  stretching or squashing, anchored to the box's top-left corner at `(X, Y)`. A tall/narrow signature
+  and a short/wide one dropped into the same box will end up different actual sizes, but neither will
+  ever look distorted.
 
 Code: `SignatureSettings` in [`Configuration/PdfProcessingOptions.cs`](Configuration/PdfProcessingOptions.cs),
 consumed in `DrawSignature` in [`Services/PdfProcessingService.cs`](Services/PdfProcessingService.cs).
