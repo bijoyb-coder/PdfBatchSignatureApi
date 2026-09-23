@@ -47,6 +47,13 @@ public class BatchNumberSettings
     /// <summary>Font family name. Resolved via the app's font resolver; see README for supported fonts.</summary>
     public string FontName { get; set; } = "Arial";
 
+    /// <summary>
+    /// Text color as a hex string: "#RRGGBB" or "#AARRGGBB" (e.g. "#FF0000" for red, "#000000" for
+    /// black). Parsed via <see cref="System.Drawing.ColorTranslator"/>-style hex parsing in
+    /// <c>PdfProcessingService</c>. Defaults to red.
+    /// </summary>
+    public string FontColor { get; set; } = "#FF0000";
+
     /// <summary>Optional bounding box width in points, used for text alignment/wrapping.</summary>
     public double? Width { get; set; }
 

@@ -49,6 +49,7 @@ Test project additionally uses `Microsoft.AspNetCore.Mvc.Testing`, `xunit`, and 
       "Y": 259,
       "FontSize": 10,
       "FontName": "Arial",
+      "FontColor": "#FF0000",
       "Width": 150,
       "Height": 14
     },
@@ -177,9 +178,14 @@ Failure (e.g. `404 Not Found`):
 Edit `PdfProcessing:BatchNumber` in `appsettings.json` (or `appsettings.Development.json`):
 
 - `PageNumber` — 1-based page the batch number is drawn on.
-- `X`, `Y` — position in points (see [Coordinate System](#12-coordinate-system-explanation)).
+- `X`, `Y` — position in points (see [Coordinate System](#12-coordinate-system-explanation)); also
+  overridable per request via the `batchNumberX`/`batchNumberY` query parameters (see
+  [§8](#8-example-api-request)).
 - `FontSize` — point size.
 - `FontName` — see [Font Behavior](#font-behavior) below.
+- `FontColor` — hex color string, `"#RRGGBB"` or `"#AARRGGBB"` (e.g. `"#FF0000"` for red,
+  `"#000000"` for black). Defaults to red (`"#FF0000"`). An invalid value falls back to black and
+  logs a warning rather than failing the request.
 - `Width` / `Height` *(optional)* — if both are set, the text is drawn inside that bounding box
   (top-left aligned); if omitted, the text is drawn starting at `(X, Y)` with no wrapping.
 
@@ -332,6 +338,7 @@ Everything else (font, size, page number, allowed folders) is config-only — ne
 | Signature X/Y | `PdfProcessing:Signature:X` / `:Y` | `signatureX` / `signatureY` |
 | Batch Number font size | `PdfProcessing:BatchNumber:FontSize` | — |
 | Batch Number font | `PdfProcessing:BatchNumber:FontName` (also see `SystemFontResolver.FamilyMap` to add new fonts) | — |
+| Batch Number color | `PdfProcessing:BatchNumber:FontColor` (hex, e.g. `"#FF0000"` for red; default red) | — |
 | Signature width | `PdfProcessing:Signature:Width` | — |
 | Signature height | `PdfProcessing:Signature:Height` | — |
 | Target page number | `PdfProcessing:BatchNumber:PageNumber` / `PdfProcessing:Signature:PageNumber` (independent) | — |

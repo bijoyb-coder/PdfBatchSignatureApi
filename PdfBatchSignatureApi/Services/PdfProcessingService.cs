@@ -193,7 +193,7 @@ public class PdfProcessingService : IPdfProcessingService
 
         using var gfx = XGraphics.FromPdfPage(page);
         var font = new XFont(settings.FontName, settings.FontSize, XFontStyleEx.Regular);
-        var brush = XBrushes.Black;
+        var brush = new XSolidBrush(ParseColor(settings.FontColor));
 
         // (0,0) is the top-left corner of the page in PDFsharp's default XGraphics space; Y grows downward.
         if (settings.Width.HasValue && settings.Height.HasValue)
@@ -242,6 +242,48 @@ public class PdfProcessingService : IPdfProcessingService
             throw new PdfProcessingException(
                 PdfProcessingErrorType.Unprocessable,
                 $"{label} page number {pageNumber} is invalid. The PDF has {pageCount} page(s).");
+        }
+    }
+
+    /// <summary>
+    /// Parses a "#RRGGBB" or "#AARRGGBB" hex color string (e.g. "#FF0000" for red) into an XColor.
+    /// Falls back to opaque black if the configured value is missing or malformed, rather than
+    /// failing the whole request over a cosmetic misconfiguration.
+    /// </summary>
+    private XColor ParseColor(string? hex)
+    {
+        if (string.IsNullOrWhiteSpace(hex))
+        {
+            return XColors.Black;
+        }
+
+        var value = hex.Trim().TrimStart('#');
+        try
+        {
+            byte a = 255, r, g, b;
+            switch (value.Length)
+            {
+                case 6:
+                    r = Convert.ToByte(value.Substring(0, 2), 16);
+                    g = Convert.ToByte(value.Substring(2, 2), 16);
+                    b = Convert.ToByte(value.Substring(4, 2), 16);
+                    break;
+                case 8:
+                    a = Convert.ToByte(value.Substring(0, 2), 16);
+                    r = Convert.ToByte(value.Substring(2, 2), 16);
+                    g = Convert.ToByte(value.Substring(4, 2), 16);
+                    b = Convert.ToByte(value.Substring(6, 2), 16);
+                    break;
+                default:
+                    throw new FormatException($"Expected 6 or 8 hex digits, got {value.Length}.");
+            }
+
+            return XColor.FromArgb(a, r, g, b);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Invalid PdfProcessing:BatchNumber:FontColor value '{FontColor}'; falling back to black.", hex);
+            return XColors.Black;
         }
     }
 
