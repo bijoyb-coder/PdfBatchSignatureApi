@@ -286,6 +286,103 @@ file uploads. Because of this:
   in each request; output filenames are de-duplicated automatically if a collision is detected (see
   `BuildOutputPath` in `PdfProcessingService`), so concurrent requests are safe.
 
+## 15. IIS Deployment
+
+This is the intended way to run the API on a server — **not** by double-clicking the published `.exe`.
+It runs as a normal IIS site/application, started and supervised by IIS itself.
+
+### One-time server setup (per machine, before the first deployment)
+
+1. Install the **ASP.NET Core Hosting Bundle** on the IIS server: download from
+   [dotnet.microsoft.com/download/dotnet/10.0](https://dotnet.microsoft.com/download/dotnet/10.0)
+   ("Hosting Bundle" under ASP.NET Core Runtime 10.0). This installs the native IIS module
+   (`aspnetcorev2.dll`, distinct from the app's own `aspnetcorev2_inprocess.dll`) that lets IIS load
+   and manage the app — required even though the publish below is self-contained.
+2. **Restart IIS** after installing the Hosting Bundle (`iisreset`), or the module won't be picked up.
+3. Ensure the **Web Server (IIS) role** with the **ASP.NET Core Module** is enabled (Server Manager ▸
+   Add Roles and Features, or already present if IIS is in use for other sites).
+
+### Publishing a build
+
+```bash
+cd PdfBatchSignatureApi
+dotnet publish -c Release -r win-x64 --self-contained true -o "D:\OCR_Edit_Publish"
+```
+
+This is **self-contained**: the target server does not need the .NET runtime installed separately
+(only the Hosting Bundle's IIS module, per step 1 above) — useful when deploying to a server you don't
+fully control the software on. The output includes `PdfBatchSignatureApi.exe`, all managed/native
+dependencies, `appsettings.json`, and a `web.config` pre-configured for IIS in-process hosting
+(`hostingModel="inprocess"`, stdout logging enabled to `.\logs\stdout`).
+
+After publishing, create the log folder once (the SDK doesn't create it automatically, and IIS won't
+write logs — though the app still runs fine — without it):
+
+```powershell
+New-Item -ItemType Directory -Path "D:\OCR_Edit_Publish\logs" -Force
+```
+
+**Before pointing IIS at a fresh publish output on a new server**, edit
+`D:\OCR_Edit_Publish\appsettings.json` (or add `appsettings.Production.json` next to it) so
+`PdfProcessing:OutputFolder` / `AllowedPdfRoot` / `AllowedSignatureRoot` point at real folders on
+*that* machine — the values checked into source control are this dev machine's paths.
+
+### Configuring the IIS site
+
+Either use IIS Manager (GUI) or the script below. Both require an **elevated** (Run as Administrator)
+session — IIS configuration cannot be changed from a non-admin process.
+
+**GUI steps:**
+
+1. Open **IIS Manager** ▸ **Application Pools** ▸ **Add Application Pool**:
+   - .NET CLR version: **No Managed Code** (the self-contained app doesn't use the .NET Framework CLR
+     IIS normally manages — ANCM handles the ASP.NET Core process directly).
+   - Start mode: **AlwaysRunning** (optional, avoids a cold-start delay on the first request).
+2. **Sites** ▸ **Add Website** (or **Add Application** under an existing site):
+   - Physical path: `D:\OCR_Edit_Publish`
+   - Application pool: the one created above
+   - Binding: pick the port/hostname this API should answer on (e.g. `http://*:5080`, or bind a
+     hostname/HTTPS certificate as your environment requires)
+3. **File permissions**: grant the application pool's identity (by default
+   `IIS AppPool\<YourAppPoolName>`) **Read & Execute** on `D:\OCR_Edit_Publish`, and **Modify** on the
+   configured `OutputFolder` (and on `AllowedPdfRoot`/`AllowedSignatureRoot` if those need to be
+   readable — Read is enough there). Without this, requests will fail with `500` errors that only show
+   up in `D:\OCR_Edit_Publish\logs\stdout*.log`.
+4. Browse to `http://<server>:<port>/health` — should return `{"status":"Healthy"}` — then
+   `http://<server>:<port>/swagger` to confirm the API is reachable.
+
+**Equivalent script** (run in an elevated PowerShell — right-click PowerShell ▸ Run as administrator):
+
+```powershell
+Import-Module WebAdministration
+
+$siteName = "PdfBatchSignatureApi"
+$poolName = "PdfBatchSignatureApiPool"
+$physicalPath = "D:\OCR_Edit_Publish"
+$port = 5080
+
+New-WebAppPool -Name $poolName
+Set-ItemProperty "IIS:\AppPools\$poolName" -Name managedRuntimeVersion -Value ""   # No Managed Code
+Set-ItemProperty "IIS:\AppPools\$poolName" -Name startMode -Value "AlwaysRunning"
+
+New-Website -Name $siteName -PhysicalPath $physicalPath -ApplicationPool $poolName -Port $port
+
+# Grant the app pool identity access to the folders configured in appsettings.json
+$identity = "IIS AppPool\$poolName"
+icacls $physicalPath /grant "${identity}:(OI)(CI)RX" /T
+# Repeat for the real OutputFolder / AllowedPdfRoot / AllowedSignatureRoot on this server, e.g.:
+# icacls "D:\RajendraGlass\Documents\Processed" /grant "${identity}:(OI)(CI)M" /T
+
+Start-Sleep -Seconds 3
+Invoke-WebRequest "http://localhost:$port/health" -UseBasicParsing
+```
+
+### Redeploying an update
+
+Stop the IIS site (or set the app pool to Stop) before overwriting the folder — the running `.exe` file
+is locked while IIS has it open. Then re-run the `dotnet publish` command above with the same `-o`
+path, restart the app pool, and verify `/health` again.
+
 ## Architecture
 
 ```
