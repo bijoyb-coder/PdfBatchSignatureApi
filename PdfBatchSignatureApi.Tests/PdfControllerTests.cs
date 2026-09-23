@@ -59,12 +59,19 @@ public class PdfControllerTests : IClassFixture<WebApplicationFactory<Program>>,
     /// <summary>
     /// Calls the endpoint the same way the described UI does: plain query-string values, no JSON body.
     /// </summary>
-    private Task<HttpResponseMessage> CallEndpoint(string? pdfPath, string? signatureImagePath, string? batchNumber)
+    private Task<HttpResponseMessage> CallEndpoint(
+        string? pdfPath, string? signatureImagePath, string? batchNumber,
+        double? batchNumberX = null, double? batchNumberY = null,
+        double? signatureX = null, double? signatureY = null)
     {
         var query = HttpUtility.ParseQueryString(string.Empty);
         if (pdfPath is not null) query["pdfPath"] = pdfPath;
         if (signatureImagePath is not null) query["signatureImagePath"] = signatureImagePath;
         if (batchNumber is not null) query["batchNumber"] = batchNumber;
+        if (batchNumberX is not null) query["batchNumberX"] = batchNumberX.Value.ToString();
+        if (batchNumberY is not null) query["batchNumberY"] = batchNumberY.Value.ToString();
+        if (signatureX is not null) query["signatureX"] = signatureX.Value.ToString();
+        if (signatureY is not null) query["signatureY"] = signatureY.Value.ToString();
 
         return _client.PostAsync($"/api/pdf/add-batch-signature?{query}", content: null);
     }
@@ -125,6 +132,37 @@ public class PdfControllerTests : IClassFixture<WebApplicationFactory<Program>>,
         // Original must remain untouched.
         using var originalDoc = PdfReader.Open(pdfPath, PdfDocumentOpenMode.ReadOnly);
         Assert.Equal(1, originalDoc.PageCount);
+    }
+
+    [Fact]
+    public async Task CoordinateOverrides_AllFourSupplied_ReturnsSuccess()
+    {
+        var pdfPath = TestFixtures.CreateSamplePdf(NewPdfPath());
+        var sigPath = TestFixtures.CreateSamplePng(NewSignaturePath());
+
+        var response = await CallEndpoint(
+            pdfPath, sigPath, "BATCH-COORD-1",
+            batchNumberX: 100, batchNumberY: 100,
+            signatureX: 200, signatureY: 300);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await response.Content.ReadFromJsonAsync<AddBatchSignatureResponse>();
+        Assert.NotNull(result);
+        Assert.True(result!.Success);
+        Assert.True(File.Exists(result.OutputPdf));
+    }
+
+    [Fact]
+    public async Task CoordinateOverrides_PartialSupplied_FallsBackForOmittedAxis()
+    {
+        // Only batchNumberX supplied; batchNumberY (and the signature coordinates) should fall back
+        // to the configured defaults rather than failing or defaulting to zero.
+        var pdfPath = TestFixtures.CreateSamplePdf(NewPdfPath());
+        var sigPath = TestFixtures.CreateSamplePng(NewSignaturePath());
+
+        var response = await CallEndpoint(pdfPath, sigPath, "BATCH-COORD-2", batchNumberX: 50);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
     [Fact]

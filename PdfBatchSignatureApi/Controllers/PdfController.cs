@@ -36,6 +36,22 @@ public class PdfController : ControllerBase
     /// it resolves inside that folder. Must be .png, .jpg, or .jpeg.
     /// </param>
     /// <param name="batchNumber">Batch number to stamp onto the PDF. Trimmed; max 100 characters.</param>
+    /// <param name="batchNumberX">
+    /// Optional. X coordinate (in points, from the left edge of the page) to draw the batch number at.
+    /// Omit to use the fixed PdfProcessing:BatchNumber:X value from appsettings.json.
+    /// </param>
+    /// <param name="batchNumberY">
+    /// Optional. Y coordinate (in points, from the top edge of the page) to draw the batch number at.
+    /// Omit to use the fixed PdfProcessing:BatchNumber:Y value from appsettings.json.
+    /// </param>
+    /// <param name="signatureX">
+    /// Optional. X coordinate (in points, from the left edge of the page) to draw the signature image at.
+    /// Omit to use the fixed PdfProcessing:Signature:X value from appsettings.json.
+    /// </param>
+    /// <param name="signatureY">
+    /// Optional. Y coordinate (in points, from the top edge of the page) to draw the signature image at.
+    /// Omit to use the fixed PdfProcessing:Signature:Y value from appsettings.json.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token for the request.</param>
     /// <response code="200">The PDF was processed successfully.</response>
     /// <response code="400">A required field was missing or invalid.</response>
@@ -52,6 +68,10 @@ public class PdfController : ControllerBase
         [FromQuery, Required(ErrorMessage = "pdfPath is required.")] string pdfPath,
         [FromQuery, Required(ErrorMessage = "signatureImagePath is required.")] string signatureImagePath,
         [FromQuery, Required(ErrorMessage = "batchNumber is required."), StringLength(100, ErrorMessage = "batchNumber cannot exceed 100 characters.")] string batchNumber,
+        [FromQuery] double? batchNumberX,
+        [FromQuery] double? batchNumberY,
+        [FromQuery] double? signatureX,
+        [FromQuery] double? signatureY,
         CancellationToken cancellationToken)
     {
         if (!ModelState.IsValid)
@@ -62,7 +82,10 @@ public class PdfController : ControllerBase
 
         try
         {
-            var result = await _pdfProcessingService.AddBatchAndSignatureAsync(pdfPath, signatureImagePath, batchNumber, cancellationToken);
+            var result = await _pdfProcessingService.AddBatchAndSignatureAsync(
+                pdfPath, signatureImagePath, batchNumber,
+                batchNumberX, batchNumberY, signatureX, signatureY,
+                cancellationToken);
             return Ok(result);
         }
         catch (PdfProcessingException ex)

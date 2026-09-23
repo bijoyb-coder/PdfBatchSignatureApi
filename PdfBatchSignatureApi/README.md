@@ -98,32 +98,46 @@ http://localhost:5080/swagger
 
 This endpoint takes **plain query-string parameters — no JSON body.** This matches the intended calling
 pattern directly: a front-end has one text box for the PDF file name, one text box for the signature
-file name, and one input for the batch number, and the system calls this endpoint passing those three
-values as-is. The API resolves each file name against the server's configured
-`PdfProcessing:AllowedPdfRoot` / `AllowedSignatureRoot` folders, and always stamps using the fixed
-`PdfProcessing:BatchNumber` / `Signature` X/Y coordinates from `appsettings.json` — no positioning
-values are ever sent by the caller.
+file name, and one input for the batch number, and the system calls this endpoint passing those values
+as-is. The API resolves each file name against the server's configured `PdfProcessing:AllowedPdfRoot` /
+`AllowedSignatureRoot` folders.
+
+**Required parameters:** `pdfPath`, `signatureImagePath`, `batchNumber`.
+
+**Optional parameters** — `batchNumberX`, `batchNumberY`, `signatureX`, `signatureY` — let a caller
+override just the X/Y position for that one request, in points, using the same top-left-origin,
+Y-down coordinate space as `appsettings.json` (see [Coordinate System Explanation](#12-coordinate-system-explanation)).
+Any of the four left out falls back to the fixed `PdfProcessing:BatchNumber`/`Signature` value from
+`appsettings.json` — everything else (font, size, page number, allowed folders) always comes from
+config and is never sent by the caller.
 
 ```
 POST /api/pdf/add-batch-signature?pdfPath=Quotation_10025.pdf&signatureImagePath=AuthorizedSignature.png&batchNumber=BATCH-2026-00125
 ```
 
+With dynamic coordinates for this one call:
+
+```
+POST /api/pdf/add-batch-signature?pdfPath=Quotation_10025.pdf&signatureImagePath=AuthorizedSignature.png&batchNumber=BATCH-2026-00125&batchNumberX=605&batchNumberY=259&signatureX=430&signatureY=482
+```
+
 Equivalent curl:
 
 ```bash
-curl -X POST "http://localhost:5080/api/pdf/add-batch-signature?pdfPath=Quotation_10025.pdf&signatureImagePath=AuthorizedSignature.png&batchNumber=BATCH-2026-00125"
+curl -X POST "http://localhost:5080/api/pdf/add-batch-signature?pdfPath=Quotation_10025.pdf&signatureImagePath=AuthorizedSignature.png&batchNumber=BATCH-2026-00125&batchNumberX=605&batchNumberY=259&signatureX=430&signatureY=482"
 ```
 
 Given `"PdfProcessing:AllowedPdfRoot": "D:\\RajendraGlass\\Documents\\Quotation"` and
-`"AllowedSignatureRoot": "D:\\RajendraGlass\\Signatures"`, this resolves to
+`"AllowedSignatureRoot": "D:\\RajendraGlass\\Signatures"`, `pdfPath`/`signatureImagePath` resolve to
 `D:\RajendraGlass\Documents\Quotation\Quotation_10025.pdf` and
 `D:\RajendraGlass\Signatures\AuthorizedSignature.png` respectively — the caller never needs to know or
 send the full path. A full path is still accepted too (see [Security Considerations](#13-security-considerations-for-file-paths)
 for how both are validated), but the normal case only ever needs bare file names.
 
-In Swagger, click **Try it out** on `POST /api/pdf/add-batch-signature` and three plain text boxes
-appear under **Parameters** — `pdfPath`, `signatureImagePath`, `batchNumber` — fill each in directly
-and click **Execute**. No JSON to write.
+In Swagger, click **Try it out** on `POST /api/pdf/add-batch-signature` and seven plain text boxes
+appear under **Parameters** — `pdfPath`, `signatureImagePath`, `batchNumber`, `batchNumberX`,
+`batchNumberY`, `signatureX`, `signatureY` — fill in the three required ones (and any coordinates you
+want to override) and click **Execute**. No JSON to write.
 
 ## 9. Example Response
 
@@ -308,17 +322,17 @@ text boxes in Swagger with any real `.pdf` and `.png`/`.jpg` file name that exis
 
 ## Quick Reference: Where to Change What
 
-Every coordinate is fixed in `appsettings.json` — the request only ever carries `pdfPath`,
-`signatureImagePath`, and `batchNumber` as plain query-string values; there is no way to override
-position from a request.
+Batch Number/Signature X and Y can be set two ways: a fixed default in `appsettings.json` (applies to
+every request that doesn't override it), or dynamically per request via query-string parameters.
+Everything else (font, size, page number, allowed folders) is config-only — never sent by the caller.
 
-| Setting | Key |
-|---|---|
-| Batch Number X/Y | `appsettings.json`: `PdfProcessing:BatchNumber:X` / `:Y` |
-| Batch Number font size | `appsettings.json`: `PdfProcessing:BatchNumber:FontSize` |
-| Batch Number font | `appsettings.json`: `PdfProcessing:BatchNumber:FontName` (also see `SystemFontResolver.FamilyMap` to add new fonts) |
-| Signature X/Y | `appsettings.json`: `PdfProcessing:Signature:X` / `:Y` |
-| Signature width | `appsettings.json`: `PdfProcessing:Signature:Width` |
-| Signature height | `appsettings.json`: `PdfProcessing:Signature:Height` |
-| Target page number | `appsettings.json`: `PdfProcessing:BatchNumber:PageNumber` / `PdfProcessing:Signature:PageNumber` (independent) |
-| Input/output allowed folders | `appsettings.json`: `PdfProcessing:AllowedPdfRoot`, `PdfProcessing:AllowedSignatureRoot`, `PdfProcessing:OutputFolder` |
+| Setting | Fixed default (`appsettings.json`) | Per-request override (query string) |
+|---|---|---|
+| Batch Number X/Y | `PdfProcessing:BatchNumber:X` / `:Y` | `batchNumberX` / `batchNumberY` |
+| Signature X/Y | `PdfProcessing:Signature:X` / `:Y` | `signatureX` / `signatureY` |
+| Batch Number font size | `PdfProcessing:BatchNumber:FontSize` | — |
+| Batch Number font | `PdfProcessing:BatchNumber:FontName` (also see `SystemFontResolver.FamilyMap` to add new fonts) | — |
+| Signature width | `PdfProcessing:Signature:Width` | — |
+| Signature height | `PdfProcessing:Signature:Height` | — |
+| Target page number | `PdfProcessing:BatchNumber:PageNumber` / `PdfProcessing:Signature:PageNumber` (independent) | — |
+| Input/output allowed folders | `PdfProcessing:AllowedPdfRoot`, `PdfProcessing:AllowedSignatureRoot`, `PdfProcessing:OutputFolder` | — |

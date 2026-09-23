@@ -26,14 +26,23 @@ public class PdfProcessingService : IPdfProcessingService
         _logger = logger;
     }
 
-    public async Task<AddBatchSignatureResponse> AddBatchAndSignatureAsync(string pdfPath, string signatureImagePath, string batchNumber, CancellationToken cancellationToken = default)
+    public async Task<AddBatchSignatureResponse> AddBatchAndSignatureAsync(
+        string pdfPath,
+        string signatureImagePath,
+        string batchNumber,
+        double? batchNumberX = null,
+        double? batchNumberY = null,
+        double? signatureX = null,
+        double? signatureY = null,
+        CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
         batchNumber = ValidateBatchNumber(batchNumber);
 
         _logger.LogInformation(
-            "Processing request received. PdfPath={PdfPath} SignatureImagePath={SignatureImagePath} BatchNumber={BatchNumber}",
-            pdfPath, signatureImagePath, batchNumber);
+            "Processing request received. PdfPath={PdfPath} SignatureImagePath={SignatureImagePath} BatchNumber={BatchNumber} " +
+            "BatchNumberX={BatchNumberX} BatchNumberY={BatchNumberY} SignatureX={SignatureX} SignatureY={SignatureY}",
+            pdfPath, signatureImagePath, batchNumber, batchNumberX, batchNumberY, signatureX, signatureY);
 
         var resolvedPdfPath = ValidateAndResolvePath(pdfPath, _options.AllowedPdfRoot, new[] { ".pdf" }, "pdfPath");
         var resolvedImagePath = ValidateAndResolvePath(signatureImagePath, _options.AllowedSignatureRoot, AllowedImageExtensions, "signatureImagePath");
@@ -52,7 +61,10 @@ public class PdfProcessingService : IPdfProcessingService
 
         var outputPath = BuildOutputPath(resolvedPdfPath, batchNumber);
 
-        await Task.Run(() => ProcessPdf(resolvedPdfPath, resolvedImagePath, batchNumber, outputPath, _options.BatchNumber, _options.Signature), cancellationToken);
+        var batchSettings = WithCoordinateOverride(_options.BatchNumber, batchNumberX, batchNumberY);
+        var signatureSettings = WithCoordinateOverride(_options.Signature, signatureX, signatureY);
+
+        await Task.Run(() => ProcessPdf(resolvedPdfPath, resolvedImagePath, batchNumber, outputPath, batchSettings, signatureSettings), cancellationToken);
 
         stopwatch.Stop();
         _logger.LogInformation(
@@ -84,6 +96,44 @@ public class PdfProcessingService : IPdfProcessingService
         }
 
         return trimmed;
+    }
+
+    /// <summary>Returns a copy of <paramref name="defaults"/> with X/Y replaced by any supplied override.</summary>
+    private static BatchNumberSettings WithCoordinateOverride(BatchNumberSettings defaults, double? x, double? y)
+    {
+        if (x is null && y is null)
+        {
+            return defaults;
+        }
+
+        return new BatchNumberSettings
+        {
+            PageNumber = defaults.PageNumber,
+            X = x ?? defaults.X,
+            Y = y ?? defaults.Y,
+            FontSize = defaults.FontSize,
+            FontName = defaults.FontName,
+            Width = defaults.Width,
+            Height = defaults.Height
+        };
+    }
+
+    /// <summary>Returns a copy of <paramref name="defaults"/> with X/Y replaced by any supplied override.</summary>
+    private static SignatureSettings WithCoordinateOverride(SignatureSettings defaults, double? x, double? y)
+    {
+        if (x is null && y is null)
+        {
+            return defaults;
+        }
+
+        return new SignatureSettings
+        {
+            PageNumber = defaults.PageNumber,
+            X = x ?? defaults.X,
+            Y = y ?? defaults.Y,
+            Width = defaults.Width,
+            Height = defaults.Height
+        };
     }
 
     private void ProcessPdf(string pdfPath, string imagePath, string batchNumber, string outputPath, BatchNumberSettings batchSettings, SignatureSettings signatureSettings)
